@@ -2,6 +2,8 @@
 
 See what will actually break before you upgrade an npm dependency.
 
+**[preflight-umber.vercel.app](https://preflight-umber.vercel.app)** · [source](https://github.com/AadiSharma49/preflight)
+
 Today, "is this upgrade safe?" means a human reads a changelog, guesses which of
 their files are affected, and finds out for real in production. preflight
 replaces the guessing: it scans your actual code for actual usage of the

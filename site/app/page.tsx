@@ -1,8 +1,7 @@
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Terminal, Row, FileLine } from '@/components/terminal';
 
-// TODO: point this at the real repo once it's pushed.
-const GITHUB = 'https://github.com/YOUR_USERNAME/preflight';
+const GITHUB = 'https://github.com/AadiSharma49/preflight';
 
 export default function Home() {
   return (

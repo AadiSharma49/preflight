@@ -26,6 +26,14 @@
     "breaking-changes",
     "static-analysis"
   ],
+  "homepage": "https://preflight-umber.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AadiSharma49/preflight.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AadiSharma49/preflight/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "@babel/parser": "^7.29.8",

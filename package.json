@@ -1,0 +1,36 @@
+{
+  "name": "preflight",
+  "version": "0.1.0",
+  "description": "See what will actually break before you upgrade an npm dependency.",
+  "type": "module",
+  "bin": {
+    "preflight": "./bin/cli.js"
+  },
+  "main": "./src/cli.js",
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.3.0"
+  },
+  "scripts": {
+    "preflight": "node ./bin/cli.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "keywords": [
+    "npm",
+    "upgrade",
+    "dependencies",
+    "breaking-changes",
+    "static-analysis"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.29.8",
+    "@babel/traverse": "^7.29.8",
+    "ignore": "^7.0.6",
+    "semver": "^7.8.5"
+  }
+}

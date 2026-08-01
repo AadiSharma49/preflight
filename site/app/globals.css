@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Dark is the default, so it lives on :root. If light were the default, the
+   page would paint white for a frame before next-themes applied the class. */
+:root {
+  --bg: #0a0a0a;
+  --surface: #0e0e0e;
+  --titlebar: #171717;
+  --fg: #ededed;
+  --muted: #8d8d8d;
+  --faint: #5a5a5a;
+  --border: #1f1f1f;
+  --accent: #f0b429;
+  --shadow: 0 1px 1px rgb(0 0 0 / 0.5), 0 18px 44px -22px rgb(0 0 0 / 0.9);
+}
+
+html.light {
+  --bg: #ffffff;
+  --surface: #fcfcfc;
+  --titlebar: #f1f1f1;
+  --fg: #0a0a0a;
+  --muted: #6f6f6f;
+  --faint: #a1a1a1;
+  --border: #e6e6e6;
+  --accent: #b45309;
+  --shadow: 0 1px 1px rgb(0 0 0 / 0.04), 0 14px 36px -18px rgb(0 0 0 / 0.18);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-titlebar: var(--titlebar);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: color-mix(in oklab, var(--accent) 28%, transparent);
+}

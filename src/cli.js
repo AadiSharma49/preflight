@@ -174,20 +174,34 @@ function reportChangelog({ name, target, current, changelog }) {
   );
   console.log('');
 
-  if (changelog.problem) {
+  // A problem is only fatal if it left us with nothing. A rate-limited run can
+  // still come back full from the changelog file.
+  if (changelog.problem && !changelog.notes?.size) {
     console.log(`  Release notes unavailable: ${changelog.problem}`);
     console.log('');
     return;
+  }
+  if (changelog.problem) {
+    console.log(`  Note: ${changelog.problem}`);
+    console.log('');
+  }
+  if (changelog.changelogPath) {
+    console.log(`  Some notes came from ${changelog.changelogPath} (no GitHub release).`);
+    console.log('');
   }
 
   // Newest first — the most recent breaking change is usually the one that bites.
   for (const version of [...range].reverse()) {
     const entry = changelog.notes.get(version);
     if (!entry) continue; // reported together below, rather than one block each
-    const date = entry.publishedAt ? entry.publishedAt.slice(0, 10) : '';
     console.log(`  ${'═'.repeat(70)}`);
-    console.log(`  ${version}   ${date}   ${entry.tag}`);
-    console.log(`  ${entry.url}`);
+    if (entry.source === 'changelog') {
+      console.log(`  ${version}   ${entry.path}`);
+    } else {
+      const date = entry.publishedAt ? entry.publishedAt.slice(0, 10) : '';
+      console.log(`  ${version}   ${date}   ${entry.tag}`);
+      console.log(`  ${entry.url}`);
+    }
     console.log('');
     console.log(entry.body.trim() || '  (release has no notes)');
     console.log('');

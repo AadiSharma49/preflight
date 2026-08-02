@@ -1,6 +1,7 @@
 import semver from 'semver';
 import { fetchPackument } from './registry.js';
 import { fetchReleaseNotes } from './releases.js';
+import { fetchChangelogFile } from './changelogFile.js';
 
 /** Turn a CLI target ("12", "^5.0.0", "latest", "1.7.2") into a real version. */
 export function resolveTarget(target, { versions, distTags }) {
@@ -68,12 +69,37 @@ export async function gatherChangelog({ pkg, current, target }) {
     };
   }
 
+  const { owner, repo } = packument.repository;
+
+  let result;
   try {
-    const { owner, repo } = packument.repository;
-    const result = await fetchReleaseNotes({ owner, repo, pkg, versions: range });
-    return { ...base, ...result };
+    result = await fetchReleaseNotes({ owner, repo, pkg, versions: range });
   } catch (err) {
-    // Rate limits and API hiccups must not take the whole command down.
-    return { ...base, problem: err.message };
+    // Rate limits and API hiccups must not take the whole command down. The
+    // changelog file is still worth trying: it is served from a different host
+    // that has no rate limit.
+    result = { notes: new Map(), missing: range, problem: err.message };
   }
+
+  if (!result.missing.length) return { ...base, ...result };
+
+  // Plenty of projects never publish GitHub releases at all — framer-motion is
+  // one — so an empty Releases API is not the same as "nothing changed".
+  const file = await fetchChangelogFile({ owner, repo, pkg });
+  if (!file) return { ...base, ...result };
+
+  const notes = new Map(result.notes);
+  for (const version of result.missing) {
+    const body = file.sections.get(version);
+    if (body === undefined) continue;
+    notes.set(version, { version, body, source: 'changelog', path: file.path });
+  }
+
+  return {
+    ...base,
+    ...result,
+    notes,
+    missing: result.missing.filter((v) => !notes.has(v)),
+    changelogPath: notes.size > result.notes.size ? file.path : undefined,
+  };
 }

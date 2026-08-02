@@ -1,4 +1,5 @@
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/logo';
 import { Terminal, Row, FileLine } from '@/components/terminal';
 
 const GITHUB = 'https://github.com/AadiSharma49/preflight';
@@ -7,7 +8,10 @@ export default function Home() {
   return (
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-3xl items-center justify-between px-6 py-6">
-        <span className="font-mono text-[13px] tracking-tight text-fg">preflight</span>
+        <span className="flex items-center gap-2 text-fg">
+          <Logo size={19} />
+          <span className="font-mono text-[13px] tracking-tight">preflight</span>
+        </span>
         <nav className="flex items-center gap-3">
           <a
             href={GITHUB}

@@ -18,7 +18,7 @@ between that and your target.
 
 - [x] 1. CLI scaffold + arg parsing
 - [x] 2. AST usage scanner (`@babel/parser`) — every import, file, line, named export
-- [x] 3. Current version from the lockfile + changelog fetch (npm registry + GitHub releases)
+- [x] 3. Current version from the lockfile + changelog fetch (GitHub releases, with a `CHANGELOG.md` fallback)
 - [ ] 4. Match usage → changelog, split into **certain break** vs **maybe affected**
 - [ ] 5. Transitive deps from the lockfile, not `package.json`
 - [ ] 6. Plain grouped output
@@ -116,10 +116,24 @@ The monorepo case is the one that matters: in `clerk/javascript`, a tag of
 you attach the wrong changelog to the wrong upgrade.
 
 Not every project publishes GitHub releases at all — `framer-motion` has none,
-it uses `CHANGELOG.md`. That is reported plainly rather than shown as an
-all-clear. Same for a missing repository field, and for the unauthenticated
-GitHub rate limit (60/hour): the scan results still print, with the reason the
-notes are missing.
+it keeps a `CHANGELOG.md`. When the Releases API comes up short, the changelog
+file is fetched from `raw.githubusercontent.com` and split by version heading.
+Both common formats are handled:
+
+```
+## [12.43.0] 2026-07-27    Keep a Changelog
+## 7.6.4                   changesets
+```
+
+Package-specific paths (`packages/nextjs/CHANGELOG.md`) are tried before the
+repo root, because in a monorepo the root file is another package's history.
+
+Fetching from `raw.githubusercontent.com` rather than the API is deliberate: it
+does not count against the 60/hour unauthenticated rate limit, so the fallback
+still works in the exact situation where the API has run out.
+
+If neither source has anything — no repository field, or no notes anywhere —
+that is reported plainly rather than shown as an all-clear.
 
 Run `npm test` to see every case that's covered.
 

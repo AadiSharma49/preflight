@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="preflight">
+  <style>
+    .s { stroke: #0a0a0a; }
+    .a { stroke: #b45309; }
+    @media (prefers-color-scheme: dark) {
+      .s { stroke: #ededed; }
+      .a { stroke: #f0b429; }
+    }
+  </style>
+  <g fill="none" stroke-width="2" stroke-linecap="round">
+    <circle class="s" cx="12" cy="12" r="8.5" />
+    <path class="s" d="M4.18 13.66 L9.46 12.54" />
+    <path class="a" d="M14.54 11.46 L19.82 10.34" />
+  </g>
+</svg>

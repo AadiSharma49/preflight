@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 148 24" width="148" height="24" role="img" aria-label="preflight">
+  <style>
+    .s { stroke: #0a0a0a; }
+    .a { stroke: #b45309; }
+    .w { fill: #0a0a0a; }
+    @media (prefers-color-scheme: dark) {
+      .s { stroke: #ededed; }
+      .a { stroke: #f0b429; }
+      .w { fill: #ededed; }
+    }
+  </style>
+  <g fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path class="s" d="M4 16.5 L12 7.5 L14.8 10.65" />
+    <path class="a" d="M17.44 13.62 L20 16.5" />
+  </g>
+  <text
+    class="w"
+    x="30"
+    y="17"
+    font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+    font-size="17"
+    font-weight="500"
+    letter-spacing="-0.3"
+  >preflight</text>
+</svg>

@@ -12,16 +12,18 @@ and the target, and tells you which lines are affected and why.
 
 ## Status
 
-Step 3 of 6 — it finds real usage of a package in a real repo, works out which
-version you're actually on, and pulls the release notes for every version
-between that and your target.
+Step 6 of 6 — the full pipeline is built: it finds real usage of a package in a
+real repo, works out which version you're actually on, pulls the release notes
+for every version between that and your target, matches your usage against the
+changelog, checks transitive dependencies too, and prints one consolidated
+plain-text report with an exit code a CI check can read.
 
 - [x] 1. CLI scaffold + arg parsing
 - [x] 2. AST usage scanner (`@babel/parser`) — every import, file, line, named export
 - [x] 3. Current version from the lockfile + changelog fetch (GitHub releases, with a `CHANGELOG.md` fallback)
-- [ ] 4. Match usage → changelog, split into **certain break** vs **maybe affected**
-- [ ] 5. Transitive deps from the lockfile, not `package.json`
-- [ ] 6. Plain grouped output
+- [x] 4. Match usage → changelog, split into **certain break** vs **maybe affected**
+- [x] 5. Transitive deps from the lockfile, not `package.json`
+- [x] 6. Plain grouped output — one report, certain first, with an exit code
 
 ## Install (local dev)
 
@@ -63,6 +65,8 @@ src/installed.js  what version is actually installed
 src/registry.js   npm registry metadata -> the GitHub repo
 src/releases.js   GitHub Releases API + release-tag parsing
 src/changelog.js  resolves the target, computes the version range, fetches notes
+src/match.js      usage -> changelog matching, certain vs maybe
+src/transitive.js direct vs transitive from the lockfile
 test/             one fixture per way the naive approach gets it wrong
 site/             the landing page (Next.js, deploys separately)
 ```

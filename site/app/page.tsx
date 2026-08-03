@@ -96,8 +96,7 @@ function HowItWorks() {
     {
       n: '03',
       title: 'Flags what is risky',
-      body: 'Matches the APIs you actually use against what the changelog says changed, separating certain breaks from maybes. This is the step currently being built.',
-      pending: true,
+      body: 'Matches the APIs you actually use against what the changelog says changed, separating certain breaks from maybes. Certain breaks fail the check; maybes are flagged for review.',
     },
   ];
 
@@ -110,11 +109,6 @@ function HowItWorks() {
           <div key={step.n} className="bg-bg p-5">
             <div className="flex items-center gap-2">
               <span className="font-mono text-[12px] text-faint">{step.n}</span>
-              {step.pending ? (
-                <span className="rounded border border-border px-1.5 py-px font-mono text-[10px] text-accent">
-                  in progress
-                </span>
-              ) : null}
             </div>
             <h3 className="mt-3 text-[15px] font-medium text-fg">{step.title}</h3>
             <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{step.body}</p>
@@ -207,25 +201,25 @@ function Status() {
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-faint">working</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
-            Usage scanning and changelog fetching. Both run against a real 166-file
-            production repository, not a toy fixture. 40 tests pass, covering renamed
-            imports, namespace and default member access, shadowed bindings, subpath
-            matching, TypeScript type positions, four release-tag conventions, API rate
-            limits and missing repositories.
+            The full pipeline: AST usage scanning, changelog fetching, usage-to-changelog
+            matching (certain vs maybe), transitive dependencies from the lockfile, and a
+            consolidated report with a CI-readable exit code. 75 tests pass, covering
+            renamed imports, shadowed bindings, TypeScript type positions, four release-tag
+            conventions, API rate limits, missing repositories, and the matching layer.
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-accent">next</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
-            Matching usage against changelog risk — the step that turns &ldquo;here is what
-            you use&rdquo; into &ldquo;here is what breaks.&rdquo;
+            The GitHub Action that runs this on every pull request and fails the check when
+            a certain break is found — the exit code is already in place for it.
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-faint">not built</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
-            Transitive dependencies from the lockfile, and the GitHub Action that runs this
-            on every pull request.
+            Publishing to npm, and an optional AI fallback for changelog lines the rules
+            cannot disambiguate (like a package named the same as an export).
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">

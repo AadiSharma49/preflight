@@ -1,0 +1,23 @@
+name: 'preflight'
+description: >-
+  Check changed dependencies in a pull request with preflight. Detects which
+  dependency ranges changed, runs preflight against each, posts one
+  consolidated PR comment (certain breaks first, maybes after), and fails the
+  check if any certain break is found.
+author: 'preflight'
+branding:
+  icon: 'shield'
+  color: 'orange'
+
+inputs:
+  token:
+    description: >-
+      GitHub token with pull-requests: write permission. Defaults to the
+      automatic GITHUB_TOKEN.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: 'dist/action.mjs'
+ 

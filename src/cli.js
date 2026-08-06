@@ -162,6 +162,10 @@ export async function run(argv) {
           repo,
           current,
           dependencyKind,
+          // The named package's own match buckets, so machine consumers (like
+          // the GitHub Action) can build reports without re-parsing text.
+          certain: directMatch.certain,
+          maybe: directMatch.maybe,
           changelog: changelog && {
             ...changelog,
             notes: changelog.notes ? Object.fromEntries(changelog.notes) : undefined,

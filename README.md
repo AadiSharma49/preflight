@@ -25,6 +25,57 @@ plain-text report with an exit code a CI check can read.
 - [x] 5. Transitive deps from the lockfile, not `package.json`
 - [x] 6. Plain grouped output — one report, certain first, with an exit code
 
+## GitHub Action
+
+preflight ships as a reusable GitHub Action. On every pull request it reads the
+`package.json` diff, runs preflight against each dependency whose range
+changed, posts one consolidated PR comment (certain breaks first, maybes
+after), and fails the check if any certain break is found. If the PR no longer
+changes any dependency, any previous preflight comment is replaced with an
+all-clear rather than left stale.
+
+```yaml
+# .github/workflows/preflight.yml
+name: preflight
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: AadiSharma49/preflight@main
+        with:
+          token: ${{ github.token }}
+```
+
+The action needs a token with `pull-requests: write` — the automatic
+`GITHUB_TOKEN` works with the `permissions` block above. If the token lacks
+this permission, the action fails loudly with instructions rather than
+silently skipping.
+
+### The action is bundled
+
+GitHub Actions does not run `npm install` for JavaScript actions, so the
+action entry and the whole CLI are bundled with esbuild into `dist/`
+(`dist/action.mjs` and `dist/cli.mjs`) and committed. Both bundles are
+self-contained — no `node_modules` is needed at runtime.
+
+After changing anything under `src/`, `bin/`, or `action/`, rebuild and commit
+the bundles:
+
+```sh
+npm run build:action   # writes dist/action.mjs and dist/cli.mjs
+git add dist action.yml
+```
+
 ## Install (local dev)
 
 ```sh

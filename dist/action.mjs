@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // action/changed-deps.js
 var DEP_FIELDS = [
@@ -170,8 +171,7 @@ async function main() {
   const baseSha = pr.base.sha;
   const headSha = pr.head.sha;
   const workspace = env("GITHUB_WORKSPACE");
-  const actionPath = env("GITHUB_ACTION_PATH");
-  const cliPath = path.join(actionPath, "dist", "cli.mjs");
+  const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "cli.mjs");
   const [baseManifest, headManifest] = await Promise.all([
     fetchManifest(owner, repo, baseSha, token),
     fetchManifest(owner, repo, headSha, token)

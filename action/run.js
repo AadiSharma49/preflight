@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { changedDependencies } from './changed-deps.js';
 import { buildComment, COMMENT_MARKER } from './comment.js';
 
@@ -112,12 +113,13 @@ async function main() {
   const baseSha = pr.base.sha;
   const headSha = pr.head.sha;
   const workspace = env('GITHUB_WORKSPACE');
-  const actionPath = env('GITHUB_ACTION_PATH');
 
-  // The bundled CLI lives at dist/cli.mjs inside the committed action bundle.
-  // It has no runtime node_modules dependency — GitHub Actions does not run
-  // npm install for JavaScript actions.
-  const cliPath = path.join(actionPath, 'dist', 'cli.mjs');
+  // The bundled CLI lives at dist/cli.mjs, next to this bundled action file
+  // (dist/action.mjs). Resolve it from this file's own location via
+  // import.meta.url — Node provides this natively, so we never depend on a
+  // GitHub env var (GITHUB_ACTION_PATH is not reliably set for non-composite
+  // node20 actions). It has no runtime node_modules dependency.
+  const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cli.mjs');
 
   const [baseManifest, headManifest] = await Promise.all([
     fetchManifest(owner, repo, baseSha, token),

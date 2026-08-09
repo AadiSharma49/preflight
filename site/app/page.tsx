@@ -202,24 +202,27 @@ function Status() {
           <dt className="font-mono text-[12px] text-faint">working</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
             The full pipeline: AST usage scanning, changelog fetching, usage-to-changelog
-            matching (certain vs maybe), transitive dependencies from the lockfile, and a
-            consolidated report with a CI-readable exit code. 75 tests pass, covering
-            renamed imports, shadowed bindings, TypeScript type positions, four release-tag
-            conventions, API rate limits, missing repositories, and the matching layer.
+            matching (certain vs maybe), transitive dependencies from the lockfile, a
+            consolidated report with a CI-readable exit code, and a reusable GitHub Action
+            that posts the findings on every pull request and fails the check on certain
+            breaks. 87 tests pass, covering renamed imports, shadowed bindings, TypeScript
+            type positions, four release-tag conventions, API rate limits, missing
+            repositories, and the matching layer.
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-accent">next</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
-            The GitHub Action that runs this on every pull request and fails the check when
-            a certain break is found — the exit code is already in place for it.
+            Publishing to npm as a scoped package, and validating the GitHub Action on a
+            real pull request.
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-faint">not built</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
-            Publishing to npm, and an optional AI fallback for changelog lines the rules
-            cannot disambiguate (like a package named the same as an export).
+            An optional AI fallback for changelog lines the rules cannot disambiguate (like
+            a package named the same as an export), and performance caching for the
+            transitive scan on large repos.
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">

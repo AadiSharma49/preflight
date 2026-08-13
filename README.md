@@ -76,7 +76,17 @@ npm run build:action   # writes dist/action.mjs and dist/cli.mjs
 git add dist action.yml
 ```
 
-## Install (local dev)
+## Install
+
+```sh
+npm install -g @aadisharma49/preflight
+preflight react 19
+```
+
+The installed command is `preflight` (from the `bin` field), not the scoped
+package name.
+
+### Local dev
 
 ```sh
 npm link          # from this folder, once
@@ -194,11 +204,9 @@ Run `npm test` to see every case that's covered.
 
 ## A note on the npm name
 
-`preflight` is already taken on the public registry. That only matters at
-publish time, and the fix is one line in `package.json`: publish as
-`@<your-npm-username>/preflight`. Scoped names under your own username are
-always available, and the installed command is still `preflight` because that
-comes from the `bin` field, not the package name.
+`preflight` is already taken on the public registry, so this package is
+published as `@aadisharma49/preflight`. The installed command is still
+`preflight` because that comes from the `bin` field, not the package name.
 
 ## Requirements
 

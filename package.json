@@ -1,5 +1,5 @@
 {
-  "name": "preflight",
+  "name": "@aadisharma49/preflight",
   "version": "0.1.0",
   "description": "See what will actually break before you upgrade an npm dependency.",
   "type": "module",
@@ -10,7 +10,6 @@
   "files": [
     "bin",
     "src",
-    "dist",
     "README.md"
   ],
   "engines": {

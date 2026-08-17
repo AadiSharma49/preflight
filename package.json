@@ -1,5 +1,5 @@
 {
-  "name": "@aadisharma49/preflight",
+  "name": "@aadi49/preflight",
   "version": "0.1.0",
   "description": "See what will actually break before you upgrade an npm dependency.",
   "type": "module",

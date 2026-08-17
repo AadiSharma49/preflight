@@ -245,7 +245,7 @@ function CallToAction() {
       </p>
 
       <div className="mt-7 max-w-xl">
-        <Terminal command="npx @aadisharma49/preflight <package> <version>" />
+        <Terminal command="npx @aadi49/preflight <package> <version>" />
         <p className="mt-3 text-[13px] text-muted">
           Not on npm yet — clone the repo and run{' '}
           <code className="font-mono text-[12.5px] text-fg">npm link</code> to use it today.

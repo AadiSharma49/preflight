@@ -79,7 +79,7 @@ git add dist action.yml
 ## Install
 
 ```sh
-npm install -g @aadisharma49/preflight
+npm install -g @aadi49/preflight
 preflight react 19
 ```
 
@@ -205,7 +205,7 @@ Run `npm test` to see every case that's covered.
 ## A note on the npm name
 
 `preflight` is already taken on the public registry, so this package is
-published as `@aadisharma49/preflight`. The installed command is still
+published as `@aadi49/preflight`. The installed command is still
 `preflight` because that comes from the `bin` field, not the package name.
 
 ## Requirements

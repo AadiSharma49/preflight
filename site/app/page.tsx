@@ -211,13 +211,6 @@ function Status() {
           </dd>
         </div>
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
-          <dt className="font-mono text-[12px] text-accent">next</dt>
-          <dd className="text-[14.5px] leading-relaxed text-muted">
-            Publishing to npm as a scoped package, and validating the GitHub Action on a
-            real pull request.
-          </dd>
-        </div>
-        <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-faint">not built</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
             An optional AI fallback for changelog lines the rules cannot disambiguate (like
@@ -228,7 +221,17 @@ function Status() {
         <div className="grid gap-1 py-4 sm:grid-cols-[7rem_1fr] sm:gap-6">
           <dt className="font-mono text-[12px] text-faint">published</dt>
           <dd className="text-[14.5px] leading-relaxed text-muted">
-            Not yet. Until it is, run it from source.
+            Live on npm as{' '}
+            <a
+              href="https://www.npmjs.com/package/@aadi49/preflight"
+              className="text-fg underline decoration-border underline-offset-2 transition-colors hover:text-accent"
+            >
+              @aadi49/preflight
+            </a>
+            . Run it with{' '}
+            <code className="font-mono text-[12.5px] text-fg">npx @aadi49/preflight</code> or
+            install it globally with{' '}
+            <code className="font-mono text-[12.5px] text-fg">npm install -g @aadi49/preflight</code>.
           </dd>
         </div>
       </dl>
@@ -247,8 +250,8 @@ function CallToAction() {
       <div className="mt-7 max-w-xl">
         <Terminal command="npx @aadi49/preflight <package> <version>" />
         <p className="mt-3 text-[13px] text-muted">
-          Not on npm yet — clone the repo and run{' '}
-          <code className="font-mono text-[12.5px] text-fg">npm link</code> to use it today.
+          Zero install — npx fetches it on the fly. Or install it globally with{' '}
+          <code className="font-mono text-[12.5px] text-fg">npm install -g @aadi49/preflight</code>.
         </p>
       </div>
 

@@ -1,0 +1,6 @@
+{
+  "name": "spinner-verify",
+  "dependencies": {
+    "framer-motion": "^12.40.0"
+  }
+}

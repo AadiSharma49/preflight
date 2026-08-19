@@ -6,6 +6,7 @@ import { resolveCurrentVersion } from './installed.js';
 import { gatherChangelog } from './changelog.js';
 import { matchUsages } from './match.js';
 import { resolveDependencyKind, listTransitiveDeps } from './transitive.js';
+import { withSpinner } from './spinner.js';
 
 const pkg = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8')
@@ -96,7 +97,12 @@ export async function run(argv) {
     throw new Error(`not a directory: ${repo}`);
   }
 
-  const result = scanRepo({ repo, pkg: name });
+  // The spinner is only for the slow steps (repo scan, network fetch). It is
+  // force-disabled in --json mode so machine output stays clean; otherwise
+  // the spinner itself decides based on whether stdout is an interactive TTY.
+  const spinner = values.json ? { enabled: false } : {};
+
+  const result = await withSpinner('Scanning repo...', () => scanRepo({ repo, pkg: name }), spinner);
   const current = resolveCurrentVersion({ repo, pkg: name });
   const dependencyKind = resolveDependencyKind({ repo, pkg: name });
 
@@ -105,7 +111,11 @@ export async function run(argv) {
     changelog = { problem: `${name} is not a dependency of this repo` };
   } else {
     try {
-      changelog = await gatherChangelog({ pkg: name, current, target });
+      changelog = await withSpinner(
+        'Fetching changelog...',
+        () => gatherChangelog({ pkg: name, current, target }),
+        spinner
+      );
     } catch (err) {
       changelog = { problem: err.message };
     }
@@ -125,7 +135,11 @@ export async function run(argv) {
   const transitive = [];
   if (dependencyKind === 'direct') {
     for (const tname of listTransitiveDeps(repo)) {
-      const tres = scanRepo({ repo, pkg: tname });
+      const tres = await withSpinner(
+        `Scanning repo for ${tname}...`,
+        () => scanRepo({ repo, pkg: tname }),
+        spinner
+      );
       if (!tres.usages.length) continue; // not imported by this project's code
 
       const tcurrent = resolveCurrentVersion({ repo, pkg: tname });
@@ -133,7 +147,11 @@ export async function run(argv) {
 
       let tchangelog = null;
       try {
-        tchangelog = await gatherChangelog({ pkg: tname, current: tcurrent, target: 'latest' });
+        tchangelog = await withSpinner(
+          `Fetching changelog for ${tname}...`,
+          () => gatherChangelog({ pkg: tname, current: tcurrent, target: 'latest' }),
+          spinner
+        );
       } catch (err) {
         tchangelog = { problem: err.message };
       }

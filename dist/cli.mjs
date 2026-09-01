@@ -46628,6 +46628,29 @@ function listTransitiveDeps(repo) {
   return [...lockfilePackages(repo)].filter((name) => !direct.has(name)).sort();
 }
 
+// src/spinner.js
+import { isatty } from "node:tty";
+var FRAMES = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+async function withSpinner(message, fn, { enabled } = {}) {
+  const show = enabled ?? Boolean(process.stdout.isTTY && isatty(process.stdout.fd));
+  if (!show) return fn();
+  let frame = 0;
+  const render = () => {
+    process.stdout.write(`\r\x1B[K${FRAMES[frame % FRAMES.length]} ${message}`);
+    frame += 1;
+  };
+  render();
+  const timer = setInterval(() => {
+    render();
+  }, 80);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+    process.stdout.write("\r\x1B[K");
+  }
+}
+
 // src/cli.js
 var pkg = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
@@ -46708,7 +46731,8 @@ ${HELP}`);
   if (!stat.isDirectory()) {
     throw new Error(`not a directory: ${repo}`);
   }
-  const result = scanRepo({ repo, pkg: name });
+  const spinner = values.json ? { enabled: false } : {};
+  const result = await withSpinner("Scanning repo...", () => scanRepo({ repo, pkg: name }), spinner);
   const current = resolveCurrentVersion({ repo, pkg: name });
   const dependencyKind = resolveDependencyKind({ repo, pkg: name });
   let changelog = null;
@@ -46716,7 +46740,11 @@ ${HELP}`);
     changelog = { problem: `${name} is not a dependency of this repo` };
   } else {
     try {
-      changelog = await gatherChangelog({ pkg: name, current, target });
+      changelog = await withSpinner(
+        "Fetching changelog...",
+        () => gatherChangelog({ pkg: name, current, target }),
+        spinner
+      );
     } catch (err) {
       changelog = { problem: err.message };
     }
@@ -46725,13 +46753,21 @@ ${HELP}`);
   const transitive = [];
   if (dependencyKind === "direct") {
     for (const tname of listTransitiveDeps(repo)) {
-      const tres = scanRepo({ repo, pkg: tname });
+      const tres = await withSpinner(
+        `Scanning repo for ${tname}...`,
+        () => scanRepo({ repo, pkg: tname }),
+        spinner
+      );
       if (!tres.usages.length) continue;
       const tcurrent = resolveCurrentVersion({ repo, pkg: tname });
       if (!tcurrent) continue;
       let tchangelog = null;
       try {
-        tchangelog = await gatherChangelog({ pkg: tname, current: tcurrent, target: "latest" });
+        tchangelog = await withSpinner(
+          `Fetching changelog for ${tname}...`,
+          () => gatherChangelog({ pkg: tname, current: tcurrent, target: "latest" }),
+          spinner
+        );
       } catch (err) {
         tchangelog = { problem: err.message };
       }

@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { changedDependencies } from './changed-deps.js';
+import { changedDependencies, baseVersionFor } from './changed-deps.js';
 import { buildComment, COMMENT_MARKER } from './comment.js';
 
 const API = 'https://api.github.com';
@@ -58,9 +58,12 @@ async function gh(url, token, options = {}) {
           `Request was: ${url}`
       );
     }
-    throw new Error(`GitHub API ${res.status} for ${url}: ${body.slice(0, 300)}`);
+    const error = new Error(`GitHub API ${res.status} for ${url}: ${body.slice(0, 300)}`);
+    error.status = res.status;
+    throw error;
   }
-  return res.status === 204 ? null : res.json();
+  if (res.status === 204) return null;
+  return options.raw ? res.text() : res.json();
 }
 
 /** Fetch package.json at a ref, or null when it does not exist there. */
@@ -69,6 +72,33 @@ async function fetchManifest(owner, repo, ref, token) {
   const data = await gh(url, token);
   if (!data?.content) return null;
   return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+}
+
+/**
+ * Fetch package-lock.json at a ref, or null when it does not exist there.
+ *
+ * Uses the raw media type on purpose: the default JSON response base64-encodes
+ * the file and returns empty `content` for anything over 1MB, and lockfiles
+ * routinely exceed that. The raw body is the file itself, no decoding needed.
+ */
+async function fetchBaseLockfile(owner, repo, ref, token) {
+  const url = `${API}/repos/${owner}/${repo}/contents/package-lock.json?ref=${encodeURIComponent(ref)}`;
+  let text;
+  try {
+    text = await gh(url, token, {
+      headers: { Accept: 'application/vnd.github.raw+json' },
+      raw: true,
+    });
+  } catch (err) {
+    if (err.status === 404) return null; // no lockfile committed at the base
+    throw err;
+  }
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null; // corrupt base lockfile — the CLI keeps its own fallbacks
+  }
 }
 
 /** Find the action's previous comment on the PR, if any. */
@@ -89,12 +119,16 @@ async function findPreflightComment(owner, repo, issue, token) {
 }
 
 /** Run preflight for one dependency and return its JSON output. */
-function runPreflight(cliPath, workspace, name, target) {
-  const out = execFileSync(
-    process.execPath,
-    [cliPath, name, target, '--cwd', workspace, '--json'],
-    { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-  );
+function runPreflight(cliPath, workspace, name, target, from) {
+  const args = [cliPath, name, target, '--cwd', workspace, '--json'];
+  // The checkout is the head sha, whose lockfile already records `target`.
+  // Telling the CLI the base version this PR upgrades away from is what makes
+  // the diff range (and therefore the matching) non-empty.
+  if (from != null) args.push('--from', from);
+  const out = execFileSync(process.execPath, args, {
+    encoding: 'utf8',
+    maxBuffer: 10 * 1024 * 1024,
+  });
   return JSON.parse(out);
 }
 
@@ -145,10 +179,20 @@ async function main() {
     return;
   }
 
+  // The PR checkout lands on the head sha, so the workspace lockfile already
+  // contains the new version and the CLI's own resolution would report
+  // current === target with an empty range — an automatic all-clear. Read the
+  // base lockfile once and tell the CLI (via --from) which version each changed
+  // dependency actually upgrades away from.
+  const baseLockfile = await fetchBaseLockfile(owner, repo, baseSha, token);
+
   for (const change of changes) {
     const { name, to } = change;
+    // Prefer the version resolved in the base lockfile; fall back to the lower
+    // bound of the declared base range when there is no base lockfile.
+    const baseVersion = baseVersionFor({ name, from: change.from, lockfile: baseLockfile });
     try {
-      const json = runPreflight(cliPath, workspace, name, to);
+      const json = runPreflight(cliPath, workspace, name, to, baseVersion);
       results.push({ ...change, ...json });
     } catch (err) {
       // preflight exits 1 when certain breaks exist — that is a finding, not

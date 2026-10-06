@@ -7,6 +7,9 @@ import { gatherChangelog } from './changelog.js';
 import { matchUsages } from './match.js';
 import { resolveDependencyKind, listTransitiveDeps } from './transitive.js';
 import { withSpinner } from './spinner.js';
+// Imported last so the bundle keeps the same module order as before; semver is
+// small enough that its placement never matters for the runtime.
+import semver from 'semver';
 
 const pkg = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8')
@@ -26,6 +29,7 @@ Examples
 
 Options
   -c, --cwd <path>   Repo to scan (default: current directory)
+      --from <ver>   Assume this exact current version instead of reading the lockfile
       --json         Machine-readable output
   -h, --help         Show this help
   -v, --version      Print preflight's own version
@@ -46,6 +50,7 @@ export async function run(argv) {
       args: argv,
       options: {
         cwd: { type: 'string', short: 'c' },
+        from: { type: 'string' },
         json: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
@@ -82,6 +87,11 @@ export async function run(argv) {
       `"${target}" is not a version I understand. Try 19, 19.0.0, ^19.0.0, or latest.`
     );
   }
+  if (values.from !== undefined && !semver.valid(values.from)) {
+    throw new Error(
+      `"--from" must be an exact semver version (e.g. 15.0.0), got "${values.from}".`
+    );
+  }
 
   const repo = path.resolve(values.cwd ?? process.cwd());
 
@@ -103,7 +113,13 @@ export async function run(argv) {
   const spinner = values.json ? { enabled: false } : {};
 
   const result = await withSpinner('Scanning repo...', () => scanRepo({ repo, pkg: name }), spinner);
-  const current = resolveCurrentVersion({ repo, pkg: name });
+  // --from overrides the lockfile. A PR checkout sits on the head sha, whose
+  // lockfile already records the new version, so reading it would make "current"
+  // equal the target and the diff range empty — every PR would report all clear.
+  // The GitHub Action passes the version the PR is actually upgrading away from.
+  const current = values.from
+    ? { version: values.from, source: '--from', exact: true }
+    : resolveCurrentVersion({ repo, pkg: name });
   const dependencyKind = resolveDependencyKind({ repo, pkg: name });
 
   let changelog = null;
@@ -220,7 +236,11 @@ function reportChangelog({ name, target, current, changelog }) {
     return;
   }
 
-  const note = current.exact ? '' : '  ← a range, not an installed version';
+  const note = current.exact
+    ? current.source === '--from'
+      ? '  ← from --from (the base of this PR, not this checkout)'
+      : ''
+    : '  ← a range, not an installed version';
   console.log(`  current   ${current.version}   (${current.source})${note}`);
 
   if (!changelog || !changelog.resolvedTarget) {

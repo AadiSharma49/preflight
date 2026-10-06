@@ -46652,6 +46652,7 @@ async function withSpinner(message, fn, { enabled } = {}) {
 }
 
 // src/cli.js
+var import_semver3 = __toESM(require_semver2(), 1);
 var pkg = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 );
@@ -46669,6 +46670,7 @@ Examples
 
 Options
   -c, --cwd <path>   Repo to scan (default: current directory)
+      --from <ver>   Assume this exact current version instead of reading the lockfile
       --json         Machine-readable output
   -h, --help         Show this help
   -v, --version      Print preflight's own version
@@ -46683,6 +46685,7 @@ async function run(argv) {
       args: argv,
       options: {
         cwd: { type: "string", short: "c" },
+        from: { type: "string" },
         json: { type: "boolean" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" }
@@ -46721,6 +46724,11 @@ ${HELP}`);
       `"${target}" is not a version I understand. Try 19, 19.0.0, ^19.0.0, or latest.`
     );
   }
+  if (values.from !== void 0 && !import_semver3.default.valid(values.from)) {
+    throw new Error(
+      `"--from" must be an exact semver version (e.g. 15.0.0), got "${values.from}".`
+    );
+  }
   const repo = path5.resolve(values.cwd ?? process.cwd());
   let stat;
   try {
@@ -46733,7 +46741,7 @@ ${HELP}`);
   }
   const spinner = values.json ? { enabled: false } : {};
   const result = await withSpinner("Scanning repo...", () => scanRepo({ repo, pkg: name }), spinner);
-  const current = resolveCurrentVersion({ repo, pkg: name });
+  const current = values.from ? { version: values.from, source: "--from", exact: true } : resolveCurrentVersion({ repo, pkg: name });
   const dependencyKind = resolveDependencyKind({ repo, pkg: name });
   let changelog = null;
   if (!current) {
@@ -46825,7 +46833,7 @@ function reportChangelog({ name, target, current, changelog }) {
     console.log("");
     return;
   }
-  const note = current.exact ? "" : "  \u2190 a range, not an installed version";
+  const note = current.exact ? current.source === "--from" ? "  \u2190 from --from (the base of this PR, not this checkout)" : "" : "  \u2190 a range, not an installed version";
   console.log(`  current   ${current.version}   (${current.source})${note}`);
   if (!changelog || !changelog.resolvedTarget) {
     console.log(`  target    ${target}`);

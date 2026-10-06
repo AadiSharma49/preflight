@@ -46466,9 +46466,11 @@ async function gatherChangelog({ pkg: pkg2, current, target }) {
 }
 
 // src/match.js
-var BREAKING = /\b(?:removed|remove|removal|deleted|delete|deletion|dropped|drop|breaking|renamed|rename|renaming|moved|move|signature|signatures)\b/i;
+var BREAKING = /\b(?:removed|remove|removal|deleted|delete|deletion|dropped|drop|renamed|rename|renaming|moved|move|signature|signatures)\b/i;
 var BEHAVIOR = /\b(?:default|defaults|changed|change|changes|behavior|behaviour|cache|cached|caching|instead of|previously|deprecated|deprecation|no longer|opt-in|opt-out|throw|throws|throwing|error|errors)\b/i;
 var CHANGE = new RegExp(`(?:${BREAKING.source}|${BEHAVIOR.source})`);
+var EXPLICIT = /\bbreaking\b|\bBREAKING CHANGE\b|\)?!:/i;
+var IGNORED_PREFIX = /^(?:[-*]\s+)?(?:docs|chore|test|ci|style)(?:\([^)]*\))?:\s*/i;
 var NAME_START = /(?:^|[\s`'"([{])/;
 var NAME_END = /(?:$|[\s`'".,;)\]}>!?])/;
 function mentionsName(text, name) {
@@ -46492,6 +46494,7 @@ function splitSections(body) {
   return sections;
 }
 function rank(signal) {
+  if (signal === "explicit") return 4;
   if (signal === "breaking") return 3;
   if (signal === "behavior") return 2;
   return 1;
@@ -46502,9 +46505,19 @@ function better(a, b) {
   if (rank(b.signal) !== rank(a.signal)) return rank(b.signal) > rank(a.signal) ? b : a;
   return b;
 }
-function matchUsage(usage, notes) {
+function mentionNames(usage, pkg2) {
+  if (usage.api === "*") return [];
+  if (usage.api === "default") {
+    if (!pkg2 || !usage.subpath) return [];
+    return [`${pkg2}/${usage.subpath}`];
+  }
   const names = [usage.api];
   if (usage.member) names.push(`${usage.api}.${usage.member}`);
+  return names;
+}
+function matchUsage(usage, notes, pkg2) {
+  const names = mentionNames(usage, pkg2);
+  if (!names.length) return null;
   let best = null;
   for (const [version, note] of notes) {
     const body = note?.body ?? "";
@@ -46514,9 +46527,17 @@ function matchUsage(usage, notes) {
       let sectionHasChange = false;
       let sectionChangeLine = null;
       for (const line of section.lines) {
+        if (IGNORED_PREFIX.test(line)) continue;
         const hasName = names.some((n) => mentionsName(line, n));
         if (hasName) {
-          if (BREAKING.test(line)) {
+          if (EXPLICIT.test(line)) {
+            best = better(best, {
+              version,
+              signal: "explicit",
+              excerpt: line,
+              section: section.title
+            });
+          } else if (BREAKING.test(line)) {
             best = better(best, {
               version,
               signal: "breaking",
@@ -46557,13 +46578,14 @@ function asMap(notes) {
   if (notes && typeof notes === "object") return new Map(Object.entries(notes));
   return /* @__PURE__ */ new Map();
 }
-function matchUsages({ usages, notes }) {
+function matchUsages({ usages, notes, pkg: pkg2 }) {
   const certain = [];
   const maybe = [];
   const map = asMap(notes);
   for (const usage of usages ?? []) {
     if (usage.api === "*") continue;
-    const match = matchUsage(usage, map);
+    if (usage.api === "default" && !usage.subpath) continue;
+    const match = matchUsage(usage, map, pkg2);
     if (!match) continue;
     const entry = {
       ...usage,
@@ -46573,7 +46595,7 @@ function matchUsages({ usages, notes }) {
       section: match.section
     };
     if (match.context) entry.context = match.context;
-    (match.signal === "breaking" ? certain : maybe).push(entry);
+    (match.signal === "breaking" || match.signal === "explicit" ? certain : maybe).push(entry);
   }
   return { certain, maybe };
 }
@@ -46757,7 +46779,7 @@ ${HELP}`);
       changelog = { problem: err.message };
     }
   }
-  const directMatch = changelog?.notes?.size ? matchUsages({ usages: result.usages, notes: changelog.notes }) : { certain: [], maybe: [] };
+  const directMatch = changelog?.notes?.size ? matchUsages({ usages: result.usages, notes: changelog.notes, pkg: name }) : { certain: [], maybe: [] };
   const transitive = [];
   if (dependencyKind === "direct") {
     for (const tname of listTransitiveDeps(repo)) {
@@ -46779,7 +46801,7 @@ ${HELP}`);
       } catch (err) {
         tchangelog = { problem: err.message };
       }
-      const tmatch = matchUsages({ usages: tres.usages, notes: tchangelog.notes });
+      const tmatch = matchUsages({ usages: tres.usages, notes: tchangelog.notes, pkg: tname });
       transitive.push({
         package: tname,
         current: tcurrent,

@@ -140,7 +140,7 @@ export async function run(argv) {
   // The named package's own match results. When the changelog could not be
   // fetched there are no notes to match against, so both buckets stay empty.
   const directMatch = changelog?.notes?.size
-    ? matchUsages({ usages: result.usages, notes: changelog.notes })
+    ? matchUsages({ usages: result.usages, notes: changelog.notes, pkg: name })
     : { certain: [], maybe: [] };
 
   // Step 5: transitive dependencies. When the named package is a direct
@@ -172,7 +172,7 @@ export async function run(argv) {
         tchangelog = { problem: err.message };
       }
 
-      const tmatch = matchUsages({ usages: tres.usages, notes: tchangelog.notes });
+      const tmatch = matchUsages({ usages: tres.usages, notes: tchangelog.notes, pkg: tname });
       transitive.push({
         package: tname,
         current: tcurrent,

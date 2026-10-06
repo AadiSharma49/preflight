@@ -165,6 +165,59 @@ test('a package.json range is resolved to its lower bound and still works', asyn
   assert.deepEqual(result.range, ['1.5.0', '2.0.0']);
 });
 
+test('a version beyond the 500-release page cap is found via direct tag lookup', async () => {
+  // Regression: vercel/next.js has published far more than 500 releases, so
+  // paging newest-first and stopping at MAX_PAGES (5 pages of 100) never
+  // reaches an older version like 16.0.0 — the bug reported it as having "no
+  // GitHub release" when it actually just wasn't on the first 500.
+  let pageRequests = 0;
+  const tagRequests = [];
+
+  const handler = (url) => {
+    const u = String(url);
+    if (u.includes('/releases/tags/')) {
+      tagRequests.push(u);
+      if (u.endsWith(encodeURIComponent('v16.0.0'))) {
+        return json({
+          tag_name: 'v16.0.0',
+          name: 'v16.0.0',
+          published_at: '2025-10-21T00:00:00Z',
+          html_url: 'https://github.com/vercel/next.js/releases/tag/v16.0.0',
+          body: 'Removed the old `images.domains` config.',
+          prerelease: false,
+        });
+      }
+      return new Response('', { status: 404 });
+    }
+
+    // Every page is a full, unrelated batch, so paging never finds anything
+    // and never sees a short page — it runs all the way to the cap.
+    pageRequests += 1;
+    const batch = Array.from({ length: 100 }, (_, i) => ({
+      tag_name: `v99.${pageRequests}.${i}`,
+      body: '',
+    }));
+    return json(batch);
+  };
+
+  const result = await withFetch(handler, () =>
+    fetchReleaseNotes({ owner: 'vercel', repo: 'next.js', pkg: 'next', versions: ['16.0.0', '16.9.9'] })
+  );
+
+  // Paging stopped at the cap — it never crawled further back in history.
+  assert.equal(pageRequests, 5);
+  assert.equal(result.truncated, true);
+
+  // 16.0.0 was found via the direct tag lookup, in one request, not by paging.
+  assert.ok(result.notes.has('16.0.0'));
+  assert.equal(result.notes.get('16.0.0').body, 'Removed the old `images.domains` config.');
+  assert.ok(tagRequests.some((u) => u.endsWith(encodeURIComponent('v16.0.0'))));
+
+  // 16.9.9 was never released at all — the fallback tries all three tag
+  // conventions and gives up, correctly, rather than guessing.
+  assert.deepEqual(result.missing, ['16.9.9']);
+});
+
 test('a target older than current is reported as a downgrade', async () => {
   const result = await withFetch(
     () => packument(),

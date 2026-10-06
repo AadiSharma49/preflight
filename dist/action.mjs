@@ -2094,28 +2094,35 @@ function findingLines(entry, origin) {
 function buildComment(results) {
   const certain = [];
   const maybe = [];
+  const missingByOrigin = [];
   for (const r of results) {
     const origin = `${r.name} ${r.from ?? "?"} \u2192 ${r.to ?? "?"}`;
     for (const e of r.certain ?? []) certain.push({ entry: e, origin });
     for (const e of r.maybe ?? []) maybe.push({ entry: e, origin });
+    if (r.changelog?.missing?.length) missingByOrigin.push(`${r.name} (${r.changelog.missing.join(", ")})`);
     for (const t of r.transitive ?? []) {
       const torigin = `${t.package} (transitive)`;
       for (const e of t.certain ?? []) certain.push({ entry: e, origin: torigin });
       for (const e of t.maybe ?? []) maybe.push({ entry: e, origin: torigin });
+      if (t.changelog?.missing?.length) {
+        missingByOrigin.push(`${t.package} (${t.changelog.missing.join(", ")})`);
+      }
     }
   }
   const totalCertain = certain.length;
   const totalMaybe = maybe.length;
+  const incomplete = missingByOrigin.length > 0;
   const lines = [];
   lines.push(COMMENT_MARKER);
   lines.push("## preflight dependency check");
   lines.push("");
-  if (!totalCertain && !totalMaybe) {
+  if (!totalCertain && !totalMaybe && !incomplete) {
     lines.push("No certain breaks or flagged maybes across the changed dependencies.");
     lines.push("");
     return lines.join("\n");
   }
-  const verdict = totalCertain ? `${totalCertain} certain break${totalCertain === 1 ? "" : "s"} \xB7 ${totalMaybe} maybe \u2014 this upgrade will break code` : `${totalCertain} certain \xB7 ${totalMaybe} maybe`;
+  const found = totalCertain ? `${totalCertain} certain break${totalCertain === 1 ? "" : "s"} \xB7 ${totalMaybe} maybe \u2014 this upgrade will break code` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe` : "no findings yet";
+  const verdict = incomplete ? `\u26A0\uFE0F Incomplete \u2014 no release notes for ${missingByOrigin.join("; ")} (${found})` : found;
   lines.push(`**${verdict}**`);
   lines.push("");
   if (certain.length) {

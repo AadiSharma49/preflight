@@ -70,6 +70,26 @@ test('transitive findings are labelled as transitive', () => {
   assert.match(body, /`src\/app\.tsx:12` — \*\*`animate`\*\*/);
 });
 
+test('a dependency with missing release notes makes the comment say incomplete, never all-clear', () => {
+  const body = buildComment([
+    {
+      name: 'next',
+      from: '15.0.0',
+      to: '16.3.4',
+      certain: [],
+      maybe: [],
+      transitive: [],
+      changelog: { missing: ['16.0.0', '16.0.1', '16.0.9'] },
+    },
+  ]);
+
+  assert.match(body, /Incomplete/i);
+  assert.match(body, /16\.0\.0/);
+  assert.match(body, /16\.0\.1/);
+  assert.match(body, /16\.0\.9/);
+  assert.ok(!/No certain breaks or flagged maybes/.test(body));
+});
+
 test('multiple changed dependencies are consolidated into one comment', () => {
   const body = buildComment([
     {

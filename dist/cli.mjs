@@ -46294,10 +46294,10 @@ function versionFromTag(tag, pkg2) {
   const bare = tag.replace(/^v/i, "");
   return import_semver.default.valid(bare) ? bare : null;
 }
-async function getPage(owner, repo, page) {
+async function githubGet(url) {
   let res;
   try {
-    res = await fetch(`${API}/repos/${owner}/${repo}/releases?per_page=100&page=${page}`, {
+    res = await fetch(url, {
       headers: {
         "User-Agent": "preflight",
         Accept: "application/vnd.github+json"
@@ -46312,9 +46312,36 @@ async function getPage(owner, repo, page) {
     }
     throw new Error(`GitHub API returned ${res.status}`);
   }
+  return res;
+}
+async function getPage(owner, repo, page) {
+  const res = await githubGet(`${API}/repos/${owner}/${repo}/releases?per_page=100&page=${page}`);
   if (res.status === 404) throw new Error(`no such GitHub repo: ${owner}/${repo}`);
   if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
   return res.json();
+}
+async function getReleaseByTag(owner, repo, pkg2, version) {
+  for (const tag of [`v${version}`, version, `${pkg2}@${version}`]) {
+    const res = await githubGet(`${API}/repos/${owner}/${repo}/releases/tags/${encodeURIComponent(tag)}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+    const release = await res.json();
+    if (release && typeof release === "object" && !Array.isArray(release) && release.tag_name) {
+      return release;
+    }
+  }
+  return null;
+}
+function toNote(release, version) {
+  return {
+    version,
+    tag: release.tag_name,
+    name: release.name,
+    publishedAt: release.published_at,
+    url: release.html_url,
+    body: release.body ?? "",
+    prerelease: release.prerelease
+  };
 }
 async function fetchReleaseNotes({ owner, repo, pkg: pkg2, versions }) {
   const wanted = new Set(versions);
@@ -46327,15 +46354,7 @@ async function fetchReleaseNotes({ owner, repo, pkg: pkg2, versions }) {
     for (const release of batch) {
       const version = versionFromTag(release.tag_name, pkg2);
       if (!version || !wanted.has(version) || found.has(version)) continue;
-      found.set(version, {
-        version,
-        tag: release.tag_name,
-        name: release.name,
-        publishedAt: release.published_at,
-        url: release.html_url,
-        body: release.body ?? "",
-        prerelease: release.prerelease
-      });
+      found.set(version, toNote(release, version));
     }
     if (batch.length < 100) {
       exhausted = true;
@@ -46343,13 +46362,17 @@ async function fetchReleaseNotes({ owner, repo, pkg: pkg2, versions }) {
     }
     if (found.size === wanted.size) break;
   }
+  const truncated = !exhausted && found.size < wanted.size;
+  for (const version of versions) {
+    if (found.has(version)) continue;
+    const release = await getReleaseByTag(owner, repo, pkg2, version);
+    if (release) found.set(version, toNote(release, version));
+  }
   return {
     notes: found,
     missing: versions.filter((v) => !found.has(v)),
     pagesFetched,
-    // True when we stopped at MAX_PAGES with versions still unaccounted for —
-    // the notes may exist further back in history.
-    truncated: !exhausted && found.size < wanted.size
+    truncated
   };
 }
 
@@ -46843,7 +46866,7 @@ ${HELP}`);
     );
     return totalCertain > 0 ? 1 : 0;
   }
-  report({ name, target, repo, result, dependencyKind, current, directMatch, transitive });
+  report({ name, target, repo, result, dependencyKind, current, directMatch, transitive, changelog });
   reportChangelog({ name, target, current, changelog });
   return totalCertain > 0 ? 1 : 0;
 }
@@ -46920,8 +46943,8 @@ function reportChangelog({ name, target, current, changelog }) {
       all ? "  publishes its changelog somewhere else (usually CHANGELOG.md)." : `  ${changelog.missing.join(", ")}`
     );
   }
-  if (changelog.truncated) {
-    console.log("  Stopped after 500 releases; older notes may exist further back.");
+  if (changelog.truncated && changelog.missing?.length) {
+    console.log("  Stopped after 500 releases; some versions were recovered by looking up their tag directly, but some are still missing \u2014 see above.");
   }
   console.log("");
 }
@@ -46953,7 +46976,7 @@ function collect(directMatch, transitive, originFor) {
   }
   return { certain, maybe };
 }
-function report({ name, target, repo, result, dependencyKind, current, directMatch, transitive }) {
+function report({ name, target, repo, result, dependencyKind, current, directMatch, transitive, changelog }) {
   const { usages, filesScanned, filesMatched, errors } = result;
   const { certain, maybe } = collect(directMatch, transitive, name);
   const totalCertain = certain.length;
@@ -46963,7 +46986,18 @@ function report({ name, target, repo, result, dependencyKind, current, directMat
   console.log(`  ${repo}`);
   if (dependencyKind) console.log(`  dependency: ${dependencyKind}`);
   console.log("");
-  const verdict = totalCertain ? `${totalCertain} certain \xB7 ${totalMaybe} maybe \u2014 upgrade will break code` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe` : "no usage matched the changelog \u2014 nothing flagged";
+  const missingVersions = [
+    ...changelog?.missing ?? [],
+    ...transitive.flatMap((t) => t.changelog?.missing ?? [])
+  ];
+  const incomplete = missingVersions.length > 0;
+  let verdict;
+  if (incomplete) {
+    const found = totalCertain ? `${totalCertain} certain \xB7 ${totalMaybe} maybe found so far` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe found so far` : "no findings yet";
+    verdict = `incomplete \u2014 no release notes for ${missingVersions.join(", ")} (${found})`;
+  } else {
+    verdict = totalCertain ? `${totalCertain} certain \xB7 ${totalMaybe} maybe \u2014 upgrade will break code` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe` : "no usage matched the changelog \u2014 nothing flagged";
+  }
   console.log(`  ${verdict}`);
   console.log("");
   if (certain.length) {

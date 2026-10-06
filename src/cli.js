@@ -221,7 +221,7 @@ export async function run(argv) {
     return totalCertain > 0 ? 1 : 0;
   }
 
-  report({ name, target, repo, result, dependencyKind, current, directMatch, transitive });
+  report({ name, target, repo, result, dependencyKind, current, directMatch, transitive, changelog });
   reportChangelog({ name, target, current, changelog });
   return totalCertain > 0 ? 1 : 0;
 }
@@ -319,8 +319,12 @@ function reportChangelog({ name, target, current, changelog }) {
         : `  ${changelog.missing.join(', ')}`
     );
   }
-  if (changelog.truncated) {
-    console.log('  Stopped after 500 releases; older notes may exist further back.');
+  // Only worth mentioning when a version is still unaccounted for: the
+  // direct-tag fallback above (see src/releases.js) usually recovers an
+  // older version the page cap skipped, so paging having stopped early is
+  // no longer a problem by the time anything is actually missing.
+  if (changelog.truncated && changelog.missing?.length) {
+    console.log('  Stopped after 500 releases; some versions were recovered by looking up their tag directly, but some are still missing — see above.');
   }
   console.log('');
 }
@@ -360,7 +364,7 @@ function collect(directMatch, transitive, originFor) {
   return { certain, maybe };
 }
 
-function report({ name, target, repo, result, dependencyKind, current, directMatch, transitive }) {
+function report({ name, target, repo, result, dependencyKind, current, directMatch, transitive, changelog }) {
   const { usages, filesScanned, filesMatched, errors } = result;
 
   // Step 6: one consolidated report. Direct and transitive findings are mixed
@@ -377,12 +381,33 @@ function report({ name, target, repo, result, dependencyKind, current, directMat
   if (dependencyKind) console.log(`  dependency: ${dependencyKind}`);
   console.log('');
 
+  // Versions in range with no release notes anywhere (GitHub releases or the
+  // changelog file), direct or transitive. A missing version may hold the
+  // breaking change that matters — the summary must say so and name it,
+  // never read as "nothing flagged" or all-clear for a result that is
+  // actually just incomplete.
+  const missingVersions = [
+    ...(changelog?.missing ?? []),
+    ...transitive.flatMap((t) => t.changelog?.missing ?? []),
+  ];
+  const incomplete = missingVersions.length > 0;
+
   // One-line summary at the very top: totals across direct and transitive.
-  const verdict = totalCertain
-    ? `${totalCertain} certain · ${totalMaybe} maybe — upgrade will break code`
-    : totalMaybe
-      ? `${totalCertain} certain · ${totalMaybe} maybe`
-      : 'no usage matched the changelog — nothing flagged';
+  let verdict;
+  if (incomplete) {
+    const found = totalCertain
+      ? `${totalCertain} certain · ${totalMaybe} maybe found so far`
+      : totalMaybe
+        ? `${totalCertain} certain · ${totalMaybe} maybe found so far`
+        : 'no findings yet';
+    verdict = `incomplete — no release notes for ${missingVersions.join(', ')} (${found})`;
+  } else {
+    verdict = totalCertain
+      ? `${totalCertain} certain · ${totalMaybe} maybe — upgrade will break code`
+      : totalMaybe
+        ? `${totalCertain} certain · ${totalMaybe} maybe`
+        : 'no usage matched the changelog — nothing flagged';
+  }
   console.log(`  ${verdict}`);
   console.log('');
 

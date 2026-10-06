@@ -46493,6 +46493,7 @@ var BREAKING = /\b(?:removed|remove|removal|deleted|delete|deletion|dropped|drop
 var BEHAVIOR = /\b(?:default|defaults|changed|change|changes|behavior|behaviour|cache|cached|caching|instead of|previously|deprecated|deprecation|no longer|opt-in|opt-out|throw|throws|throwing|error|errors)\b/i;
 var CHANGE = new RegExp(`(?:${BREAKING.source}|${BEHAVIOR.source})`);
 var EXPLICIT = /\bbreaking\b|\bBREAKING CHANGE\b|\)?!:/i;
+var ADDITION = /\b(?:add|adds|added|adding)\b/i;
 var IGNORED_PREFIX = /^(?:[-*]\s+)?(?:docs|chore|test|ci|style)(?:\([^)]*\))?:\s*/i;
 var NAME_START = /(?:^|[\s`'"([{])/;
 var NAME_END = /(?:$|[\s`'".,;)\]}>!?])/;
@@ -46528,9 +46529,11 @@ function better(a, b) {
   if (rank(b.signal) !== rank(a.signal)) return rank(b.signal) > rank(a.signal) ? b : a;
   return b;
 }
+function isModuleLevel(usage) {
+  return usage.api === "*" || usage.api === "default";
+}
 function mentionNames(usage, pkg2) {
-  if (usage.api === "*") return [];
-  if (usage.api === "default") {
+  if (isModuleLevel(usage)) {
     if (!pkg2 || !usage.subpath) return [];
     return [`${pkg2}/${usage.subpath}`];
   }
@@ -46541,6 +46544,7 @@ function mentionNames(usage, pkg2) {
 function matchUsage(usage, notes, pkg2) {
   const names = mentionNames(usage, pkg2);
   if (!names.length) return null;
+  const moduleLevel = isModuleLevel(usage);
   let best = null;
   for (const [version, note] of notes) {
     const body = note?.body ?? "";
@@ -46553,21 +46557,22 @@ function matchUsage(usage, notes, pkg2) {
         if (IGNORED_PREFIX.test(line)) continue;
         const hasName = names.some((n) => mentionsName(line, n));
         if (hasName) {
-          if (EXPLICIT.test(line)) {
+          const canBeStrong = !moduleLevel && !ADDITION.test(line);
+          if (canBeStrong && EXPLICIT.test(line)) {
             best = better(best, {
               version,
               signal: "explicit",
               excerpt: line,
               section: section.title
             });
-          } else if (BREAKING.test(line)) {
+          } else if (canBeStrong && BREAKING.test(line)) {
             best = better(best, {
               version,
               signal: "breaking",
               excerpt: line,
               section: section.title
             });
-          } else if (BEHAVIOR.test(line)) {
+          } else if (BEHAVIOR.test(line) || EXPLICIT.test(line) || BREAKING.test(line)) {
             best = better(best, {
               version,
               signal: "behavior",
@@ -46606,8 +46611,8 @@ function matchUsages({ usages, notes, pkg: pkg2 }) {
   const maybe = [];
   const map = asMap(notes);
   for (const usage of usages ?? []) {
-    if (usage.api === "*") continue;
-    if (usage.api === "default" && !usage.subpath) continue;
+    const moduleLevel = isModuleLevel(usage);
+    if (moduleLevel && !usage.subpath) continue;
     const match = matchUsage(usage, map, pkg2);
     if (!match) continue;
     const entry = {
@@ -46618,6 +46623,7 @@ function matchUsages({ usages, notes, pkg: pkg2 }) {
       section: match.section
     };
     if (match.context) entry.context = match.context;
+    if (moduleLevel) entry.tag = "module-level change";
     (match.signal === "breaking" || match.signal === "explicit" ? certain : maybe).push(entry);
   }
   return { certain, maybe };
@@ -46948,14 +46954,33 @@ function reportChangelog({ name, target, current, changelog }) {
   }
   console.log("");
 }
-function formatFinding(e, origin) {
+function formatFinding(e) {
   const api = e.member ? `${e.api}.${e.member}` : e.api;
   const signal = e.signal === "breaking" ? "certain" : e.signal;
-  const lines = [`  ${e.file}:${e.line}  ${api}  [${e.version}]  (${origin})`];
+  const where = `${e.file}:${e.lines.join(",")}`;
+  const lines = [`  ${where}  ${api}  [${e.version}]  (${e.origin})`];
   if (e.excerpt) lines.push(`      ${e.excerpt}`);
   if (e.context) lines.push(`      context: ${e.context}`);
+  if (e.tag) lines.push(`      tag: ${e.tag}`);
   if (e.section) lines.push(`      section: ${e.section} \xB7 ${signal}`);
   return lines.join("\n");
+}
+function groupByEvidence(list) {
+  const groups = /* @__PURE__ */ new Map();
+  const order = [];
+  for (const { entry, origin } of list) {
+    const api = entry.member ? `${entry.api}.${entry.member}` : entry.api;
+    const key = JSON.stringify([origin, entry.file, api, entry.version, entry.signal, entry.excerpt, entry.tag]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { ...entry, origin, lines: [] };
+      groups.set(key, group);
+      order.push(group);
+    }
+    group.lines.push(entry.line);
+  }
+  for (const group of order) group.lines.sort((a, b) => a - b);
+  return order;
 }
 function collect(directMatch, transitive, originFor) {
   const certain = [];
@@ -46974,7 +46999,7 @@ function collect(directMatch, transitive, originFor) {
       maybe.push({ entry: e, origin: `${t.package} (transitive)` });
     }
   }
-  return { certain, maybe };
+  return { certain: groupByEvidence(certain), maybe: groupByEvidence(maybe) };
 }
 function report({ name, target, repo, result, dependencyKind, current, directMatch, transitive, changelog }) {
   const { usages, filesScanned, filesMatched, errors } = result;
@@ -46991,25 +47016,32 @@ function report({ name, target, repo, result, dependencyKind, current, directMat
     ...transitive.flatMap((t) => t.changelog?.missing ?? [])
   ];
   const incomplete = missingVersions.length > 0;
+  const counts = `${totalCertain} certain \xB7 ${totalMaybe} maybe`;
   let verdict;
-  if (incomplete) {
-    const found = totalCertain ? `${totalCertain} certain \xB7 ${totalMaybe} maybe found so far` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe found so far` : "no findings yet";
-    verdict = `incomplete \u2014 no release notes for ${missingVersions.join(", ")} (${found})`;
+  if (totalCertain) {
+    verdict = `${counts} \u2014 upgrade will break code`;
+  } else if (totalMaybe) {
+    verdict = counts;
+  } else if (incomplete) {
+    verdict = counts;
   } else {
-    verdict = totalCertain ? `${totalCertain} certain \xB7 ${totalMaybe} maybe \u2014 upgrade will break code` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe` : "no usage matched the changelog \u2014 nothing flagged";
+    verdict = "no usage matched the changelog \u2014 nothing flagged";
+  }
+  if (incomplete) {
+    verdict += ` \u2014 incomplete: no release notes for ${missingVersions.join(", ")}`;
   }
   console.log(`  ${verdict}`);
   console.log("");
   if (certain.length) {
     console.log(`  \u2500\u2500 certain \u2014 will break \u2500${"\u2500".repeat(46)}`);
     console.log("");
-    for (const c of certain) console.log(formatFinding(c.entry, c.origin));
+    for (const c of certain) console.log(formatFinding(c));
     console.log("");
   }
   if (maybe.length) {
     console.log(`  \u2500\u2500 maybe \u2014 review \u2500${"\u2500".repeat(50)}`);
     console.log("");
-    for (const m of maybe) console.log(formatFinding(m.entry, m.origin));
+    for (const m of maybe) console.log(formatFinding(m));
     console.log("");
   }
   if (usages.length && !totalCertain && !totalMaybe) {

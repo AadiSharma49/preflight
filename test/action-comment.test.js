@@ -90,6 +90,70 @@ test('a dependency with missing release notes makes the comment say incomplete, 
   assert.ok(!/No certain breaks or flagged maybes/.test(body));
 });
 
+test('the same evidence line repeated across usages in one file is shown once, with every line', () => {
+  // Regression: a module-level match (default/namespace import matched by
+  // specifier) repeats across every usage site in a file. The comment must
+  // not print the same finding once per usage.
+  const body = buildComment([
+    {
+      name: 'next',
+      from: '15.5.25',
+      to: '16.3.4',
+      certain: [],
+      maybe: [
+        finding({
+          file: 'app/page.tsx',
+          line: 2,
+          api: 'default',
+          excerpt: '- breaking(next/image)!: remove 16px from default images.imageSizes config',
+          tag: 'module-level change',
+        }),
+        finding({
+          file: 'app/page.tsx',
+          line: 6,
+          api: 'default',
+          excerpt: '- breaking(next/image)!: remove 16px from default images.imageSizes config',
+          tag: 'module-level change',
+        }),
+        finding({
+          file: 'app/page.tsx',
+          line: 7,
+          api: 'default',
+          excerpt: '- breaking(next/image)!: remove 16px from default images.imageSizes config',
+          tag: 'module-level change',
+        }),
+      ],
+      transitive: [],
+    },
+  ]);
+
+  assert.match(body, /0 certain · 1 maybe/);
+  assert.match(body, /`app\/page\.tsx:2,6,7` — \*\*`default`\*\*/);
+  assert.match(body, /tag: module-level change/);
+  assert.equal(body.split('images.imageSizes config').length - 1, 1);
+});
+
+test('a certain break stays visible in the headline alongside an incomplete warning', () => {
+  // Requirement: the headline leads with the real counts; incomplete is a
+  // warning appended to it, never a replacement that hides a real finding.
+  const body = buildComment([
+    {
+      name: 'next',
+      from: '15.0.0',
+      to: '16.3.4',
+      certain: [finding({ line: 4 })],
+      maybe: [],
+      transitive: [],
+      changelog: { missing: ['16.0.0'] },
+    },
+  ]);
+
+  const verdictLine = body.split('\n').find((l) => l.startsWith('**'));
+  assert.match(verdictLine, /^\*\*1 certain break.*Incomplete.*16\.0\.0/);
+  assert.match(body, /### ⛔ Certain — will break/);
+  assert.match(body, /- Removed `useThing`/);
+});
+
 test('multiple changed dependencies are consolidated into one comment', () => {
   const body = buildComment([
     {

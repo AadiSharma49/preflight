@@ -323,7 +323,13 @@ test('the BREAKING CHANGE footer is an explicit marker', () => {
   assert.equal(m.signal, 'explicit');
 });
 
-test('a breaking conventional commit naming the import specifier is a certain break', () => {
+test('a module-level match is never certain, even with an explicit marker', () => {
+  // Regression: a default import matched by its specifier (next/image) is a
+  // mention of the whole module, not of a specific export, member, or prop
+  // the code actually uses. An unrelated line about `images.imageSizes` that
+  // happens to carry a `!:` marker must not read as a certain break on every
+  // usage of `next/image` — that was the reported bug (6 false "will break"
+  // findings citing an unrelated images config change).
   const usages = [usage({ api: 'default', subpath: 'image', via: 'default' })];
   const notes = new Map([
     [
@@ -333,14 +339,47 @@ test('a breaking conventional commit naming the import specifier is a certain br
   ]);
 
   const m = matchUsage(usages[0], notes, 'next');
-  assert.equal(m.signal, 'explicit');
+  assert.equal(m.signal, 'behavior');
   assert.equal(m.version, '16.3.4');
   assert.match(m.excerpt, /next\/image/);
 
   const { certain, maybe } = matchUsages({ usages, notes, pkg: 'next' });
-  assert.equal(certain.length, 1);
-  assert.equal(certain[0].signal, 'explicit');
-  assert.equal(maybe.length, 0);
+  assert.equal(certain.length, 0);
+  assert.equal(maybe.length, 1);
+  assert.equal(maybe[0].signal, 'behavior');
+  assert.equal(maybe[0].tag, 'module-level change');
+});
+
+test('an "add" line never reads as certain, even with an explicit marker', () => {
+  // Regression: "feat(next/image)!: add support for `dangerouslyAllowLocalIP`"
+  // describes a new capability, not a removal. The `!:` marker signals a
+  // notable change worth flagging, not a break — it must cap at `behavior`,
+  // the same as any other non-removal wording, for a named export too (not
+  // only for a module-level match).
+  const m = matchUsage(
+    usage({ api: 'useScroll' }),
+    new Map([['2.0.0', note('## 2.0.0\n\n- feat!: add support for a new `useScroll` option')]])
+  );
+  assert.equal(m.signal, 'behavior');
+});
+
+test('a bracketed [Breaking] marker on an "add" line is also capped at behavior', () => {
+  const m = matchUsage(
+    usage({ api: 'useScroll' }),
+    new Map([['2.0.0', note('## 2.0.0\n\n- [Breaking] Added `useScroll` support for horizontal containers')]])
+  );
+  assert.equal(m.signal, 'behavior');
+});
+
+test('a module-level usage is tagged, even when the signal is already a maybe', () => {
+  const m = matchUsages({
+    usages: [usage({ api: 'default', subpath: 'image', via: 'default' })],
+    notes: new Map([['2.0.0', note('## 2.0.0\n\n- `next/image` now caches results by default')]]),
+    pkg: 'next',
+  });
+  assert.equal(m.certain.length, 0);
+  assert.equal(m.maybe.length, 1);
+  assert.equal(m.maybe[0].tag, 'module-level change');
 });
 
 test('the reported false positive: a docs commit about the default is ignored', () => {

@@ -7,13 +7,41 @@
 
 export const COMMENT_MARKER = '<!-- preflight -->';
 
-/** One finding line, with the dependency + version range as the origin. */
-function findingLines(entry, origin) {
+/** One finding line, with every line it was seen at and the origin. */
+function findingLines(entry) {
   const api = entry.member ? `${entry.api}.${entry.member}` : entry.api;
-  const lines = [`- \`${entry.file}:${entry.line}\` — **\`${api}\`** \`${entry.version}\` (${origin})`];
+  const lines = [
+    `- \`${entry.file}:${entry.lines.join(',')}\` — **\`${api}\`** \`${entry.version}\` (${entry.origin})`,
+  ];
   if (entry.excerpt) lines.push(`  ${entry.excerpt}`);
   if (entry.context) lines.push(`  > context: ${entry.context}`);
+  if (entry.tag) lines.push(`  tag: ${entry.tag}`);
   return lines;
+}
+
+/**
+ * The same evidence line can match many usages in one file — several
+ * `<Image>` elements all importing `next/image` by default, say. Collapse
+ * those into one finding per (origin, file, api, version, signal, excerpt,
+ * tag), carrying every line number it was seen at, instead of repeating the
+ * whole block once per usage.
+ */
+function groupByEvidence(list) {
+  const groups = new Map();
+  const order = [];
+  for (const { entry, origin } of list) {
+    const api = entry.member ? `${entry.api}.${entry.member}` : entry.api;
+    const key = JSON.stringify([origin, entry.file, api, entry.version, entry.signal, entry.excerpt, entry.tag]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { ...entry, origin, lines: [] };
+      groups.set(key, group);
+      order.push(group);
+    }
+    group.lines.push(entry.line);
+  }
+  for (const group of order) group.lines.sort((a, b) => a - b);
+  return order;
 }
 
 /**
@@ -50,8 +78,10 @@ export function buildComment(results) {
     }
   }
 
-  const totalCertain = certain.length;
-  const totalMaybe = maybe.length;
+  const groupedCertain = groupByEvidence(certain);
+  const groupedMaybe = groupByEvidence(maybe);
+  const totalCertain = groupedCertain.length;
+  const totalMaybe = groupedMaybe.length;
   const incomplete = missingByOrigin.length > 0;
 
   const lines = [];
@@ -65,28 +95,29 @@ export function buildComment(results) {
     return lines.join('\n');
   }
 
-  const found = totalCertain
+  // The headline always leads with the real counts — incomplete is a warning
+  // appended to it, never a replacement. A certain break must stay visible
+  // even when some other version in range has no notes.
+  const counts = totalCertain
     ? `${totalCertain} certain break${totalCertain === 1 ? '' : 's'} · ${totalMaybe} maybe — this upgrade will break code`
-    : totalMaybe
-      ? `${totalCertain} certain · ${totalMaybe} maybe`
-      : 'no findings yet';
+    : `${totalCertain} certain · ${totalMaybe} maybe`;
   const verdict = incomplete
-    ? `⚠️ Incomplete — no release notes for ${missingByOrigin.join('; ')} (${found})`
-    : found;
+    ? `${counts} — ⚠️ Incomplete: no release notes for ${missingByOrigin.join('; ')}`
+    : counts;
   lines.push(`**${verdict}**`);
   lines.push('');
 
-  if (certain.length) {
+  if (groupedCertain.length) {
     lines.push('### ⛔ Certain — will break');
     lines.push('');
-    for (const c of certain) lines.push(...findingLines(c.entry, c.origin));
+    for (const c of groupedCertain) lines.push(...findingLines(c));
     lines.push('');
   }
 
-  if (maybe.length) {
+  if (groupedMaybe.length) {
     lines.push('### ⚠️ Maybe — review');
     lines.push('');
-    for (const m of maybe) lines.push(...findingLines(m.entry, m.origin));
+    for (const m of groupedMaybe) lines.push(...findingLines(m));
     lines.push('');
   }
 

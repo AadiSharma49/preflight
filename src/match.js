@@ -39,6 +39,16 @@ const CHANGE = new RegExp(`(?:${BREAKING.source}|${BEHAVIOR.source})`);
 const EXPLICIT = /\bbreaking\b|\bBREAKING CHANGE\b|\)?!:/i;
 
 /**
+ * "Add support for X" describes a new capability, not a removal — even on a
+ * line carrying an explicit marker ("feat(next/image)!: add
+ * `dangerouslyAllowLocalIP`" is a real changelog style: the `!` signals a
+ * notable change worth calling out, not a break). A line like this can never
+ * read as `explicit` or `breaking`: it is capped at `behavior`, the same as
+ * any other line that merely touches the area without removing anything.
+ */
+const ADDITION = /\b(?:add|adds|added|adding)\b/i;
+
+/**
  * Conventional-commit subjects that carry no user-facing API change. A line
  * like "docs: remove incorrect statement that force-cache is the default..."
  * must never become a certain break, no matter which change words it happens
@@ -94,20 +104,28 @@ function better(a, b) {
 }
 
 /**
+ * Whether a usage can only ever be named by the module specifier it came
+ * from, never by a specific export: a `default` import or a namespace (`*`)
+ * import. Neither has an export name of its own — "next/image", built from
+ * the scanned package plus the usage's subpath, is the only real mention.
+ */
+function isModuleLevel(usage) {
+  return usage.api === '*' || usage.api === 'default';
+}
+
+/**
  * The mentionable names for one usage.
  *
- * Most usages are an export name — "motion" or "motion.div". A `default`
- * import has no export name: only the specifier it came from ("next/image",
- * built from the scanned package plus the usage's subpath) is a real mention.
- * Never match on the English word "default" itself.
+ * Most usages are an export name — "motion" or "motion.div". A module-level
+ * usage (`default` or `*`) has no export name: only the specifier it came
+ * from is a real mention. Never match on the English word "default" itself.
  *
- * Returns an empty array for `*` usages (no name at all) and for `default`
- * usages without a subpath or package (no entry point to name) — the caller
- * skips those entirely rather than guess.
+ * Returns an empty array for a module-level usage with no subpath or
+ * package (no entry point to name) — the caller skips those entirely rather
+ * than guess.
  */
 function mentionNames(usage, pkg) {
-  if (usage.api === '*') return [];
-  if (usage.api === 'default') {
+  if (isModuleLevel(usage)) {
     if (!pkg || !usage.subpath) return [];
     return [`${pkg}/${usage.subpath}`];
   }
@@ -123,15 +141,23 @@ function mentionNames(usage, pkg) {
  * signal. Otherwise returns the strongest match:
  *   { version, signal: 'explicit'|'breaking'|'behavior'|'related', excerpt, section, context? }
  *
+ * A module-level usage (matched only by its import specifier, never a named
+ * export, member, or prop) can never reach `explicit`/`breaking`: the
+ * changelog is only saying the module was touched, not that this code's
+ * usage of it broke. Same cap for a line worded as an addition ("add support
+ * for X") — an explicit marker on a line like that signals a notable change,
+ * not a removal.
+ *
  * @param {object} usage  A scanner usage record.
  * @param {Map<string, object>} notes  Changelog notes keyed by version.
  * @param {string} [pkg]  The package being scanned; needed to name the
- *   specifier a `default` import came from (e.g. "next" + subpath "image").
+ *   specifier a `default`/`*` import came from (e.g. "next" + subpath "image").
  */
 export function matchUsage(usage, notes, pkg) {
   const names = mentionNames(usage, pkg);
   if (!names.length) return null;
 
+  const moduleLevel = isModuleLevel(usage);
   let best = null;
 
   for (const [version, note] of notes) {
@@ -151,21 +177,28 @@ export function matchUsage(usage, notes, pkg) {
         const hasName = names.some((n) => mentionsName(line, n));
 
         if (hasName) {
-          if (EXPLICIT.test(line)) {
+          // Neither a module-level match nor an "add" line can reach the top
+          // two tiers, no matter which marker or wording the rest of the
+          // line carries.
+          const canBeStrong = !moduleLevel && !ADDITION.test(line);
+
+          if (canBeStrong && EXPLICIT.test(line)) {
             best = better(best, {
               version,
               signal: 'explicit',
               excerpt: line,
               section: section.title,
             });
-          } else if (BREAKING.test(line)) {
+          } else if (canBeStrong && BREAKING.test(line)) {
             best = better(best, {
               version,
               signal: 'breaking',
               excerpt: line,
               section: section.title,
             });
-          } else if (BEHAVIOR.test(line)) {
+          } else if (BEHAVIOR.test(line) || EXPLICIT.test(line) || BREAKING.test(line)) {
+            // Capped here: wording alone would otherwise read as explicit or
+            // breaking, but `canBeStrong` ruled that out above.
             best = better(best, {
               version,
               signal: 'behavior',
@@ -211,12 +244,15 @@ function asMap(notes) {
  *
  * Each entry carries the full usage (file, line, column, api, member, kind,
  * typeOnly, subpath, via) plus the changelog match that triggered it:
- * version, signal, excerpt, section, and context (for `related` matches).
+ * version, signal, excerpt, section, and context (for `related` matches). A
+ * module-level match (see `isModuleLevel`) also carries `tag: 'module-level
+ * change'` — matchUsage already caps its signal so it never lands in
+ * `certain`, but the tag documents why for the report.
  *
  * @param {Array<object>} usages  Scanner usage records.
  * @param {Map<string, object>|object} notes  Changelog notes keyed by version.
  * @param {string} [pkg]  The package being scanned; needed to name the
- *   specifier a `default` import came from (e.g. "next" + subpath "image").
+ *   specifier a `default`/`*` import came from (e.g. "next" + subpath "image").
  */
 export function matchUsages({ usages, notes, pkg }) {
   const certain = [];
@@ -224,11 +260,10 @@ export function matchUsages({ usages, notes, pkg }) {
   const map = asMap(notes);
 
   for (const usage of usages ?? []) {
-    // A `*` usage (side-effect import, namespace import line) has no specific
-    // export name to match against the changelog. A `default` usage without a
-    // subpath has no entry point to name, so it is skipped rather than guessed.
-    if (usage.api === '*') continue;
-    if (usage.api === 'default' && !usage.subpath) continue;
+    const moduleLevel = isModuleLevel(usage);
+    // A module-level usage with no subpath has no entry point to name, so it
+    // is skipped rather than guessed.
+    if (moduleLevel && !usage.subpath) continue;
 
     const match = matchUsage(usage, map, pkg);
     if (!match) continue;
@@ -241,6 +276,7 @@ export function matchUsages({ usages, notes, pkg }) {
       section: match.section,
     };
     if (match.context) entry.context = match.context;
+    if (moduleLevel) entry.tag = 'module-level change';
 
     (match.signal === 'breaking' || match.signal === 'explicit' ? certain : maybe).push(entry);
   }

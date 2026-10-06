@@ -329,15 +329,42 @@ function reportChangelog({ name, target, current, changelog }) {
   console.log('');
 }
 
-/** One finding: file/line/api/version/excerpt, plus where it came from. */
-function formatFinding(e, origin) {
+/** One finding: file (with every line it was seen at)/api/version/excerpt. */
+function formatFinding(e) {
   const api = e.member ? `${e.api}.${e.member}` : e.api;
   const signal = e.signal === 'breaking' ? 'certain' : e.signal;
-  const lines = [`  ${e.file}:${e.line}  ${api}  [${e.version}]  (${origin})`];
+  const where = `${e.file}:${e.lines.join(',')}`;
+  const lines = [`  ${where}  ${api}  [${e.version}]  (${e.origin})`];
   if (e.excerpt) lines.push(`      ${e.excerpt}`);
   if (e.context) lines.push(`      context: ${e.context}`);
+  if (e.tag) lines.push(`      tag: ${e.tag}`);
   if (e.section) lines.push(`      section: ${e.section} · ${signal}`);
   return lines.join('\n');
+}
+
+/**
+ * The same evidence line can match many usages in one file — several
+ * `<Image>` elements all importing `next/image` by default, say. Collapse
+ * those into one finding per (origin, file, api, version, signal, excerpt,
+ * tag), carrying every line number it was seen at, instead of repeating the
+ * whole block once per usage.
+ */
+function groupByEvidence(list) {
+  const groups = new Map();
+  const order = [];
+  for (const { entry, origin } of list) {
+    const api = entry.member ? `${entry.api}.${entry.member}` : entry.api;
+    const key = JSON.stringify([origin, entry.file, api, entry.version, entry.signal, entry.excerpt, entry.tag]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { ...entry, origin, lines: [] };
+      groups.set(key, group);
+      order.push(group);
+    }
+    group.lines.push(entry.line);
+  }
+  for (const group of order) group.lines.sort((a, b) => a - b);
+  return order;
 }
 
 /** The named package's findings, labelled as the direct dependency. */
@@ -361,7 +388,7 @@ function collect(directMatch, transitive, originFor) {
     }
   }
 
-  return { certain, maybe };
+  return { certain: groupByEvidence(certain), maybe: groupByEvidence(maybe) };
 }
 
 function report({ name, target, repo, result, dependencyKind, current, directMatch, transitive, changelog }) {
@@ -392,21 +419,23 @@ function report({ name, target, repo, result, dependencyKind, current, directMat
   ];
   const incomplete = missingVersions.length > 0;
 
-  // One-line summary at the very top: totals across direct and transitive.
+  // One-line summary at the very top. It always leads with the real counts —
+  // an incomplete result is a warning appended to that headline, never a
+  // replacement for it: real findings must still be visible even when some
+  // version in range has no notes.
+  const counts = `${totalCertain} certain · ${totalMaybe} maybe`;
   let verdict;
-  if (incomplete) {
-    const found = totalCertain
-      ? `${totalCertain} certain · ${totalMaybe} maybe found so far`
-      : totalMaybe
-        ? `${totalCertain} certain · ${totalMaybe} maybe found so far`
-        : 'no findings yet';
-    verdict = `incomplete — no release notes for ${missingVersions.join(', ')} (${found})`;
+  if (totalCertain) {
+    verdict = `${counts} — upgrade will break code`;
+  } else if (totalMaybe) {
+    verdict = counts;
+  } else if (incomplete) {
+    verdict = counts; // leads with the real (zero) count, not "nothing flagged"
   } else {
-    verdict = totalCertain
-      ? `${totalCertain} certain · ${totalMaybe} maybe — upgrade will break code`
-      : totalMaybe
-        ? `${totalCertain} certain · ${totalMaybe} maybe`
-        : 'no usage matched the changelog — nothing flagged';
+    verdict = 'no usage matched the changelog — nothing flagged';
+  }
+  if (incomplete) {
+    verdict += ` — incomplete: no release notes for ${missingVersions.join(', ')}`;
   }
   console.log(`  ${verdict}`);
   console.log('');
@@ -414,14 +443,14 @@ function report({ name, target, repo, result, dependencyKind, current, directMat
   if (certain.length) {
     console.log(`  ── certain — will break ─${'─'.repeat(46)}`);
     console.log('');
-    for (const c of certain) console.log(formatFinding(c.entry, c.origin));
+    for (const c of certain) console.log(formatFinding(c));
     console.log('');
   }
 
   if (maybe.length) {
     console.log(`  ── maybe — review ─${'─'.repeat(50)}`);
     console.log('');
-    for (const m of maybe) console.log(formatFinding(m.entry, m.origin));
+    for (const m of maybe) console.log(formatFinding(m));
     console.log('');
   }
 

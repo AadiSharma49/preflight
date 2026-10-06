@@ -2084,12 +2084,32 @@ function baseVersionFor({ name, from, lockfile }) {
 
 // action/comment.js
 var COMMENT_MARKER = "<!-- preflight -->";
-function findingLines(entry, origin) {
+function findingLines(entry) {
   const api = entry.member ? `${entry.api}.${entry.member}` : entry.api;
-  const lines = [`- \`${entry.file}:${entry.line}\` \u2014 **\`${api}\`** \`${entry.version}\` (${origin})`];
+  const lines = [
+    `- \`${entry.file}:${entry.lines.join(",")}\` \u2014 **\`${api}\`** \`${entry.version}\` (${entry.origin})`
+  ];
   if (entry.excerpt) lines.push(`  ${entry.excerpt}`);
   if (entry.context) lines.push(`  > context: ${entry.context}`);
+  if (entry.tag) lines.push(`  tag: ${entry.tag}`);
   return lines;
+}
+function groupByEvidence(list) {
+  const groups = /* @__PURE__ */ new Map();
+  const order = [];
+  for (const { entry, origin } of list) {
+    const api = entry.member ? `${entry.api}.${entry.member}` : entry.api;
+    const key = JSON.stringify([origin, entry.file, api, entry.version, entry.signal, entry.excerpt, entry.tag]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { ...entry, origin, lines: [] };
+      groups.set(key, group);
+      order.push(group);
+    }
+    group.lines.push(entry.line);
+  }
+  for (const group of order) group.lines.sort((a, b) => a - b);
+  return order;
 }
 function buildComment(results) {
   const certain = [];
@@ -2109,8 +2129,10 @@ function buildComment(results) {
       }
     }
   }
-  const totalCertain = certain.length;
-  const totalMaybe = maybe.length;
+  const groupedCertain = groupByEvidence(certain);
+  const groupedMaybe = groupByEvidence(maybe);
+  const totalCertain = groupedCertain.length;
+  const totalMaybe = groupedMaybe.length;
   const incomplete = missingByOrigin.length > 0;
   const lines = [];
   lines.push(COMMENT_MARKER);
@@ -2121,20 +2143,20 @@ function buildComment(results) {
     lines.push("");
     return lines.join("\n");
   }
-  const found = totalCertain ? `${totalCertain} certain break${totalCertain === 1 ? "" : "s"} \xB7 ${totalMaybe} maybe \u2014 this upgrade will break code` : totalMaybe ? `${totalCertain} certain \xB7 ${totalMaybe} maybe` : "no findings yet";
-  const verdict = incomplete ? `\u26A0\uFE0F Incomplete \u2014 no release notes for ${missingByOrigin.join("; ")} (${found})` : found;
+  const counts = totalCertain ? `${totalCertain} certain break${totalCertain === 1 ? "" : "s"} \xB7 ${totalMaybe} maybe \u2014 this upgrade will break code` : `${totalCertain} certain \xB7 ${totalMaybe} maybe`;
+  const verdict = incomplete ? `${counts} \u2014 \u26A0\uFE0F Incomplete: no release notes for ${missingByOrigin.join("; ")}` : counts;
   lines.push(`**${verdict}**`);
   lines.push("");
-  if (certain.length) {
+  if (groupedCertain.length) {
     lines.push("### \u26D4 Certain \u2014 will break");
     lines.push("");
-    for (const c of certain) lines.push(...findingLines(c.entry, c.origin));
+    for (const c of groupedCertain) lines.push(...findingLines(c));
     lines.push("");
   }
-  if (maybe.length) {
+  if (groupedMaybe.length) {
     lines.push("### \u26A0\uFE0F Maybe \u2014 review");
     lines.push("");
-    for (const m of maybe) lines.push(...findingLines(m.entry, m.origin));
+    for (const m of groupedMaybe) lines.push(...findingLines(m));
     lines.push("");
   }
   return lines.join("\n");

@@ -61,6 +61,16 @@ The action needs a token with `pull-requests: write` — the automatic
 this permission, the action fails loudly with instructions rather than
 silently skipping.
 
+**Monorepos:** if `package.json` isn't at the repo root, set `path` to the
+subdirectory that contains it:
+
+```yaml
+      - uses: AadiSharma49/preflight@main
+        with:
+          token: ${{ github.token }}
+          path: apps/web
+```
+
 ### The action is bundled
 
 GitHub Actions does not run `npm install` for JavaScript actions, so the

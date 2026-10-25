@@ -16,6 +16,12 @@ inputs:
       automatic GITHUB_TOKEN.
     required: false
     default: ${{ github.token }}
+  path:
+    description: >-
+      Subdirectory containing package.json, for monorepos (relative to the
+      repo root, e.g. "apps/web"). Leave empty to use the repo root.
+    required: false
+    default: ''
 
 runs:
   using: 'node20'

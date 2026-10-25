@@ -2162,6 +2162,15 @@ function buildComment(results) {
   return lines.join("\n");
 }
 
+// action/repo-path.js
+function normalizeSubdir(subdir) {
+  return (subdir ?? "").replace(/^\/+|\/+$/g, "");
+}
+function repoPath(subdir, filename) {
+  const clean = normalizeSubdir(subdir);
+  return clean ? `${clean}/${filename}` : filename;
+}
+
 // action/run.js
 var API = "https://api.github.com";
 function fail(msg) {
@@ -2204,14 +2213,16 @@ permissions:
   if (res.status === 204) return null;
   return options.raw ? res.text() : res.json();
 }
-async function fetchManifest(owner, repo, ref, token) {
-  const url = `${API}/repos/${owner}/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`;
+async function fetchManifest(owner, repo, ref, token, subdir) {
+  const file = repoPath(subdir, "package.json");
+  const url = `${API}/repos/${owner}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`;
   const data = await gh(url, token);
   if (!data?.content) return null;
   return JSON.parse(Buffer.from(data.content, "base64").toString("utf8"));
 }
-async function fetchBaseLockfile(owner, repo, ref, token) {
-  const url = `${API}/repos/${owner}/${repo}/contents/package-lock.json?ref=${encodeURIComponent(ref)}`;
+async function fetchBaseLockfile(owner, repo, ref, token, subdir) {
+  const file = repoPath(subdir, "package-lock.json");
+  const url = `${API}/repos/${owner}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`;
   let text;
   try {
     text = await gh(url, token, {
@@ -2266,10 +2277,12 @@ async function main() {
   const baseSha = pr.base.sha;
   const headSha = pr.head.sha;
   const workspace = env("GITHUB_WORKSPACE");
+  const subdir = normalizeSubdir(process.env.INPUT_PATH);
+  const scanDir = subdir ? path.join(workspace, subdir) : workspace;
   const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "cli.mjs");
   const [baseManifest, headManifest] = await Promise.all([
-    fetchManifest(owner, repo, baseSha, token),
-    fetchManifest(owner, repo, headSha, token)
+    fetchManifest(owner, repo, baseSha, token, subdir),
+    fetchManifest(owner, repo, headSha, token, subdir)
   ]);
   const changes = changedDependencies({ baseManifest, headManifest });
   const results = [];
@@ -2285,12 +2298,12 @@ async function main() {
     console.log("preflight: no dependency version changes detected in this PR");
     return;
   }
-  const baseLockfile = await fetchBaseLockfile(owner, repo, baseSha, token);
+  const baseLockfile = await fetchBaseLockfile(owner, repo, baseSha, token, subdir);
   for (const change of changes) {
     const { name, to } = change;
     const baseVersion = baseVersionFor({ name, from: change.from, lockfile: baseLockfile });
     try {
-      const json = runPreflight(cliPath, workspace, name, to, baseVersion);
+      const json = runPreflight(cliPath, scanDir, name, to, baseVersion);
       results.push({ ...change, ...json });
     } catch (err) {
       const stdout = err.stdout?.toString?.() ?? "";

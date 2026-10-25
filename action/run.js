@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { changedDependencies, baseVersionFor } from './changed-deps.js';
 import { buildComment, COMMENT_MARKER } from './comment.js';
+import { normalizeSubdir, repoPath } from './repo-path.js';
 
 const API = 'https://api.github.com';
 
@@ -67,8 +68,9 @@ async function gh(url, token, options = {}) {
 }
 
 /** Fetch package.json at a ref, or null when it does not exist there. */
-async function fetchManifest(owner, repo, ref, token) {
-  const url = `${API}/repos/${owner}/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`;
+async function fetchManifest(owner, repo, ref, token, subdir) {
+  const file = repoPath(subdir, 'package.json');
+  const url = `${API}/repos/${owner}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`;
   const data = await gh(url, token);
   if (!data?.content) return null;
   return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
@@ -81,8 +83,9 @@ async function fetchManifest(owner, repo, ref, token) {
  * the file and returns empty `content` for anything over 1MB, and lockfiles
  * routinely exceed that. The raw body is the file itself, no decoding needed.
  */
-async function fetchBaseLockfile(owner, repo, ref, token) {
-  const url = `${API}/repos/${owner}/${repo}/contents/package-lock.json?ref=${encodeURIComponent(ref)}`;
+async function fetchBaseLockfile(owner, repo, ref, token, subdir) {
+  const file = repoPath(subdir, 'package-lock.json');
+  const url = `${API}/repos/${owner}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`;
   let text;
   try {
     text = await gh(url, token, {
@@ -147,6 +150,10 @@ async function main() {
   const baseSha = pr.base.sha;
   const headSha = pr.head.sha;
   const workspace = env('GITHUB_WORKSPACE');
+  // Subdirectory containing package.json, for monorepos. Empty means the
+  // repo root, preserving the previous behavior exactly.
+  const subdir = normalizeSubdir(process.env.INPUT_PATH);
+  const scanDir = subdir ? path.join(workspace, subdir) : workspace;
 
   // The bundled CLI lives at dist/cli.mjs, next to this bundled action file
   // (dist/action.mjs). Resolve it from this file's own location via
@@ -156,8 +163,8 @@ async function main() {
   const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cli.mjs');
 
   const [baseManifest, headManifest] = await Promise.all([
-    fetchManifest(owner, repo, baseSha, token),
-    fetchManifest(owner, repo, headSha, token),
+    fetchManifest(owner, repo, baseSha, token, subdir),
+    fetchManifest(owner, repo, headSha, token, subdir),
   ]);
 
   const changes = changedDependencies({ baseManifest, headManifest });
@@ -184,7 +191,7 @@ async function main() {
   // current === target with an empty range — an automatic all-clear. Read the
   // base lockfile once and tell the CLI (via --from) which version each changed
   // dependency actually upgrades away from.
-  const baseLockfile = await fetchBaseLockfile(owner, repo, baseSha, token);
+  const baseLockfile = await fetchBaseLockfile(owner, repo, baseSha, token, subdir);
 
   for (const change of changes) {
     const { name, to } = change;
@@ -192,7 +199,7 @@ async function main() {
     // bound of the declared base range when there is no base lockfile.
     const baseVersion = baseVersionFor({ name, from: change.from, lockfile: baseLockfile });
     try {
-      const json = runPreflight(cliPath, workspace, name, to, baseVersion);
+      const json = runPreflight(cliPath, scanDir, name, to, baseVersion);
       results.push({ ...change, ...json });
     } catch (err) {
       // preflight exits 1 when certain breaks exist — that is a finding, not
